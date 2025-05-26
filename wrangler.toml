@@ -1,0 +1,13 @@
+name = "theweekndbot"
+main = "src/index.js"
+compatibility_date = "2025-05-24"
+
+# Your Cloudflare account ID is required here (find it in your dashboard)
+account_id = "d86a78b8d5fd8d26d8b6aebd6024bfc8"
+
+# Use the workers.dev subdomain for development & testing:
+workers_dev = true
+
+# Optional: custom domain routing is not needed for responding to Telegram updates
+# [env.production]
+# route = "https://your-domain.com/*"

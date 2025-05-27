@@ -1,5 +1,6 @@
 import { Bot } from "grammy";
 import songs from "./songs.json";
+import covers from "./covers.json";   // { "After Hours": "https://…/after_hours.jpg", … }
 
 // helper: generate album code from full name
 function makeAlbumCode(name) {
@@ -20,6 +21,8 @@ export default {
     }
 
     const update = await request.json();
+
+    // instantiate bot
     const bot = new Bot(env.TELEGRAM_BOT_TOKEN, {
       botInfo: {
         id: 7537190571,
@@ -29,67 +32,95 @@ export default {
       }
     });
 
-    // build albumName list + code map
-    const albumNames  = Array.from(new Set(songs.map(s => s.album)));
-    const albumCodeMap = {};
-    albumNames.forEach(a => {
-      albumCodeMap[makeAlbumCode(a)] = a;
-    });
+    // 1) grab every distinct album name
+    const albumNames = Array.from(new Set(songs.map(s => s.album)));
 
-    // START: handle deep-links
+    // 2) build a unique code→albumName map, collision-proofed
+    const albumCodeMap = {};
+    for (const full of albumNames) {
+      const base = makeAlbumCode(full);
+      let code  = base;
+      let i     = 1;
+      while (albumCodeMap[code]) {
+        code = `${base}${i++}`;
+      }
+      albumCodeMap[code] = full;
+    }
+
+    // START: handle "/start" + deep-links
     bot.command("start", async ctx => {
       const incomingId = ctx.message?.message_id;
       const chatId     = ctx.chat.id;
-      const payload    = ctx.startPayload;
-      const param      = payload != null
+      const payload    = ctx.startPayload || "";
+      const param      = payload.startsWith("play_") || payload.startsWith("album_")
                         ? payload
-                        : (ctx.message?.text || "").split(" ").slice(1)[0] || "";
+                        : ((ctx.message?.text || "").split(" ").slice(1)[0] || "");
 
-      // PLAY deep-link
+      // PLAY deep-link:  t.me/…?start=play_TRACKID
       if (param.startsWith("play_")) {
-        const id    = param.slice(5);
-        const track = songs.find(s => s.id === id);
+        const trackId = param.slice(5);
+        const track   = songs.find(s => s.id === trackId);
         if (!track) {
           await ctx.reply("<b>Track not found!</b>", { parse_mode: "HTML" });
         } else {
           await ctx.replyWithAudio(track.file_id, {
             caption: [
-              `<b>Song: ${track.title}</b>`,
-              `<b>Album: <i>${track.album}</i></b>`,
-              `<b>Artist: <i>${track.artist}</i></b>`
+              `<b>Song:</b> ${track.title}`,
+              `<b>Album:</b> <i>${track.album}</i>`,
+              `<b>Artist:</b> <i>${track.artist}</i>`,
             ].join("\n"),
-            parse_mode: "HTML"
+            parse_mode: "HTML",
           });
         }
+        // clean up deep-link message
         await ctx.api.deleteMessage(chatId, incomingId).catch(() => {});
         return;
       }
 
-      // ALBUM deep-link
+      // ALBUM deep-link: t.me/…?start=album_CODE
       if (param.startsWith("album_")) {
-        const code = param.slice(6);
-        const full = albumCodeMap[code];
+        const code   = param.slice(6);
+        const full   = albumCodeMap[code];
         if (!full) {
           await ctx.reply("<b>Album not found!</b>", { parse_mode: "HTML" });
           await ctx.api.deleteMessage(chatId, incomingId).catch(() => {});
           return;
         }
-        const matches     = songs.filter(s => s.album === full);
-        const botUsername = bot.botInfo.username;
-        const trackLines  = matches.map((s, i) => {
+
+        const coverUrl = covers[full];
+        const tracks   = songs.filter(s => s.album === full);
+        const botU     = bot.botInfo.username;
+
+        // build tracklist with play-links
+        const listLines = tracks.map((s, i) => {
           const p = `play_${encodeURIComponent(s.id)}`;
-          const u = `https://t.me/${botUsername}?start=${p}`;
-          return `${i+1}. <b><a href="${u}">${s.title} — ${s.artist}</a></b>`;
-        }).join("\n");
-        await ctx.reply(`<b>${full}</b>\n${trackLines}`, {
-          parse_mode: "HTML",
-          disable_web_page_preview: true
+          const u = `https://t.me/${botU}?start=${p}`;
+          return `${i+1}. <a href="${u}">${s.title} — ${s.artist}</a>`;
         });
+
+        if (coverUrl) {
+          // send album cover + tracklist
+          await ctx.replyWithPhoto(coverUrl, {
+            caption: [
+              `<b>[${code}] ${full}</b>`,
+              ...listLines
+            ].join("\n"),
+            parse_mode: "HTML",
+            disable_web_page_preview: false,
+          });
+        } else {
+          // fallback: text only
+          await ctx.reply(
+            `<b>[${code}] ${full}</b>\n` + listLines.join("\n"),
+            { parse_mode: "HTML", disable_web_page_preview: true }
+          );
+        }
+
         await ctx.api.deleteMessage(chatId, incomingId).catch(() => {});
         return;
       }
 
-      // Default
+      // default welcome
       await ctx.reply(
         [
 			"<b><u>Welcome to [103.5]dawn.&#8203;fm!</u></b>",
@@ -101,32 +132,31 @@ export default {
 			"<b>Tune in.</b>\n",
 			"<b><i>“You are now listening to 103.5… DawnFM.”</i></b>"
 		  ].join("\n"),
-        { parse_mode: "HTML" }
-      );
+      { parse_mode: "HTML" });
+
       await ctx.api.deleteMessage(chatId, incomingId).catch(() => {});
     });
 
-    // LIST: all albums
+    // LIST: all albums with their deep-link
     bot.command("list", ctx => {
       if (!albumNames.length) {
         return ctx.reply("<b>No albums available.</b>", { parse_mode: "HTML" });
       }
-      const botUsername = bot.botInfo.username;
-      const lines = albumNames.map(full => {
-        const code = makeAlbumCode(full);
-        const u    = `https://t.me/${botUsername}?start=album_${code}`;
-        return `<b>Album – <a href="${u}">${full}</a></b>`;
-      }).join("\n");
-      return ctx.reply(lines, {
+      const botU = bot.botInfo.username;
+      const lines = Object.entries(albumCodeMap).map(([code, full]) => {
+        const u = `https://t.me/${botU}?start=album_${code}`;
+        return `<b>[${code}]</b> <a href="${u}">${full}</a>`;
+      });
+      return ctx.reply(lines.join("\n"), {
         parse_mode: "HTML",
-        disable_web_page_preview: true
+        disable_web_page_preview: true,
       });
     });
 
-    // SEARCH: song-only fuzzy search, always list tracks by album
+    // SEARCH: song fuzzy
     bot.command("search", async ctx => {
-      const raw   = ctx.message?.text || "";
-      const query = raw.split(" ").slice(1).join(" ").toLowerCase();
+      const parts = (ctx.message?.text || "").split(" ");
+      const query = parts.slice(1).join(" ").toLowerCase();
       if (!query) {
         return ctx.reply("<b>Usage: /search &lt;song name&gt;</b>", { parse_mode: "HTML" });
       }
@@ -137,114 +167,110 @@ export default {
       if (!found.length) {
         return ctx.reply("<b>No songs matched.</b>", { parse_mode: "HTML" });
       }
-      // group by album
       const byAlb = {};
       found.forEach(s => {
         (byAlb[s.album] = byAlb[s.album]||[]).push(s);
       });
-      const botUsername = bot.botInfo.username;
-      let result = "";
-      Object.keys(byAlb).forEach(album => {
-        result += `<b>Album: ${album}</b>\n`;
-        byAlb[album].forEach((s, i) => {
+      const botU = bot.botInfo.username;
+      let out = "";
+      for (const album of Object.keys(byAlb)) {
+        out += `<b>Album:</b> ${album}\n`;
+        byAlb[album].forEach((s,i) => {
           const p = `play_${encodeURIComponent(s.id)}`;
-          const u = `https://t.me/${botUsername}?start=${p}`;
-          result += `${i+1}. <b><a href="${u}">${s.title}</a></b>\n`;
+          const u = `https://t.me/${botU}?start=${p}`;
+          out += `${i+1}. <a href="${u}">${s.title}</a>\n`;
         });
-        result += "\n";
-      });
-      return ctx.reply(result.trim(), {
+        out += `\n`;
+      }
+      return ctx.reply(out.trim(), {
         parse_mode: "HTML",
-        disable_web_page_preview: true
+        disable_web_page_preview: true,
       });
     });
 
-    // ALBUM: fuzzy album search with album-only command
-    bot.command("album", ctx => {
+    // ALBUM: fuzzy album search
+    bot.command("album", async ctx => {
       const query = (ctx.message?.text || "").split(" ").slice(1).join(" ").toLowerCase().trim();
       if (!query) {
         return ctx.reply("<b>Usage: /album &lt;album name&gt;</b>", { parse_mode: "HTML" });
       }
-      // find all album names containing the query
-      const matchesAlb = albumNames.filter(a => a.toLowerCase().includes(query));
-      const botUsername = bot.botInfo.username;
-
-      if (!matchesAlb.length) {
+      const matches = albumNames.filter(a => a.toLowerCase().includes(query));
+      const botU    = bot.botInfo.username;
+      if (!matches.length) {
         return ctx.reply("<b>No albums matched.</b>", { parse_mode: "HTML" });
       }
-      // multiple matches → list album links only
-      if (matchesAlb.length > 1) {
-        const lines = matchesAlb.map(full => {
-          const code = makeAlbumCode(full);
-          const u    = `https://t.me/${botUsername}?start=album_${code}`;
-          return `<b>Album: <a href="${u}">${full}</a></b>`;
-        }).join("\n");
-        return ctx.reply(lines, {
-          parse_mode: "HTML",
-          disable_web_page_preview: true
+      if (matches.length > 1) {
+        const lines = matches.map(full => {
+          const code = Object.entries(albumCodeMap).find(([c,f]) => f === full)[0];
+          const u    = `https://t.me/${botU}?start=album_${code}`;
+          return `<a href="${u}">${full}</a>`;
         });
+        return ctx.reply(
+          "<b>Multiple albums found:</b>\n" + lines.join("\n"),
+          { parse_mode: "HTML", disable_web_page_preview: true }
+        );
       }
-      // exactly one → show tracklist
-      const only = matchesAlb[0];
-      const tracks = songs.filter(s => s.album === only);
-      let resp = `<b>Album: ${only}</b>\n`;
-      tracks.forEach((s, i) => {
+      // exactly one
+      const only     = matches[0];
+      const codeOnly = Object.entries(albumCodeMap).find(([c,f]) => f === only)[0];
+      const tracks   = songs.filter(s => s.album === only);
+      const list     = tracks.map((s,i) => {
         const p = `play_${encodeURIComponent(s.id)}`;
-        const u = `https://t.me/${botUsername}?start=${p}`;
-        resp += `${i+1}. <b><a href="${u}">${s.title} — ${s.artist}</a></b>\n`;
+        const u = `https://t.me/${botU}?start=${p}`;
+        return `${i+1}. <a href="${u}">${s.title} — ${s.artist}</a>`;
       });
-      return ctx.reply(resp.trim(), {
-        parse_mode: "HTML",
-        disable_web_page_preview: true
-      });
+      const coverUrl = covers[only];
+      if (coverUrl) {
+        await ctx.replyWithPhoto(coverUrl, {
+          caption: `<b>[${codeOnly}] ${only}</b>\n` + list.join("\n"),
+          parse_mode: "HTML",
+          disable_web_page_preview: false,
+        });
+      } else {
+        await ctx.reply(
+          `<b>[${codeOnly}] ${only}</b>\n` + list.join("\n"),
+          { parse_mode: "HTML", disable_web_page_preview: true }
+        );
+      }
     });
 
-// PLAY: fuzzy by id/title
-bot.command("play", async ctx => {
-	const raw = (ctx.message?.text || "").split(" ").slice(1).join(" ").toLowerCase().trim();
-	if (!raw) {
-	  return ctx.reply("<b>Usage: /play &lt;id or title&gt;</b>", { parse_mode: "HTML" });
-	}
-  
-	// find all songs whose id or title includes the query
-	const matches = songs.filter(s =>
-	  s.id.toLowerCase().includes(raw) ||
-	  s.title.toLowerCase().includes(raw)
-	);
-  
-	// no match
-	if (matches.length === 0) {
-	  return ctx.reply("<b>No songs found.</b>", { parse_mode: "HTML" });
-	}
-  
-	// exactly one match → send it
-	if (matches.length === 1) {
-	  const track = matches[0];
-	  return ctx.replyWithAudio(track.file_id, {
-		caption: [
-		  `<b>Song: ${track.title}</b>`,
-		  `<b>Album: <i>${track.album}</i></b>`,
-		  `<b>Artist: <i>${track.artist}</i></b>`
-		].join("\n"),
-		parse_mode: "HTML"
-	  });
-	}
-  
-	// multiple matches → list them with deep-links
-	const botUsername = bot.botInfo.username;
-	const lines = matches.map((s, i) => {
-	  const payload = `play_${encodeURIComponent(s.id)}`;
-	  const url     = `https://t.me/${botUsername}?start=${payload}`;
-	  return `${i+1}. <b><a href="${url}">${s.title}</a></b> — ${s.album}`;
-	}).join("\n");
-  
-	return ctx.reply(
-	  `<b>Multiple songs found:</b>\n${lines}`,
-	  { parse_mode: "HTML", disable_web_page_preview: true }
-	);
-  });
-  
-    // HELP: minimalist command guide
+    // PLAY: fuzzy play by id/title
+    bot.command("play", async ctx => {
+      const raw = (ctx.message?.text || "").split(" ").slice(1).join(" ").toLowerCase().trim();
+      if (!raw) {
+        return ctx.reply("<b>Usage: /play &lt;id or title&gt;</b>", { parse_mode: "HTML" });
+      }
+      const matches = songs.filter(s =>
+        s.id.toLowerCase().includes(raw) ||
+        s.title.toLowerCase().includes(raw)
+      );
+      if (!matches.length) {
+        return ctx.reply("<b>No songs found.</b>", { parse_mode: "HTML" });
+      }
+      if (matches.length === 1) {
+        const t = matches[0];
+        return ctx.replyWithAudio(t.file_id, {
+          caption: [
+            `<b>Song:</b> ${t.title}`,
+            `<b>Album:</b> <i>${t.album}</i>`,
+            `<b>Artist:</b> <i>${t.artist}</i>`,
+          ].join("\n"),
+          parse_mode: "HTML",
+        });
+      }
+      const botU = bot.botInfo.username;
+      const lines = matches.map((s,i) => {
+        const p = `play_${encodeURIComponent(s.id)}`;
+        const u = `https://t.me/${botU}?start=${p}`;
+        return `${i+1}. <a href="${u}">${s.title}</a> — ${s.album}`;
+      });
+      return ctx.reply(
+        "<b>Multiple songs found:</b>\n" + lines.join("\n"),
+        { parse_mode: "HTML", disable_web_page_preview: true }
+      );
+    });
+
+    // HELP
     bot.command("help", ctx => {
       return ctx.reply(
         "<b>dawn.&#8203;fm [103.5] Commands</b>\n\n" +

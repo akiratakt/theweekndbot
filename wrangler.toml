@@ -11,3 +11,6 @@ workers_dev = true
 # Optional: custom domain routing is not needed for responding to Telegram updates
 # [env.production]
 # route = "https://your-domain.com/*"
+
+[vars]
+TELEGRAM_BOT_TOKEN = "7537190571:AAGGikNChQnzBvBUwxYH6HqTCBz7Ps2Ar3o"

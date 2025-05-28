@@ -121,7 +121,7 @@ export default {
           const u = `https://t.me/${botU}?start=${p}`;
           return `${i + 1}. <a href="${u}">${s.title} — ${s.artist}</a>`;
         });
-        const albumHeader = `<b>[${code}] ${full}</b>`;
+        const albumHeader = `<b>[${full}]</b>`;
         const albumText = [albumHeader, ...listLines].join("\n");
 
         if (coverUrl) {
@@ -183,13 +183,12 @@ export default {
           const coverUrl = covers[albumFull];
           if (coverUrl) {
             await ctx.replyWithPhoto(coverUrl, {
-              caption: `<b>[${albumCode}] ${albumFull}</b>\n${listLines}`,
-              parse_mode: "HTML",
+            caption: `<b>[${albumFull}]</b>\n${listLines}`,              parse_mode: "HTML",
               disable_web_page_preview: false,
             });
           } else {
             await ctx.reply(
-              `<b>[${albumCode}] ${albumFull}</b>\n${listLines}`,
+              `<b>[${albumFull}]</b>\n${listLines}`,
               { parse_mode: "HTML", disable_web_page_preview: true }
             );
           }
@@ -208,7 +207,7 @@ export default {
           return `${idx + 1}. <a href="${link}">${albumFull}</a>`;
         });
         await ctx.reply(
-          `<b>Albums in “${tagName}”:</b>\n${lines.join("\n")}`,
+          `<b>Albums in [${tagName}]:</b>\n${lines.join("\n")}`,
           { parse_mode: "HTML", disable_web_page_preview: true }
         );
         await ctx.api.deleteMessage(chatId, incomingId).catch(() => {});
@@ -216,20 +215,23 @@ export default {
       }
 
       // default welcome
-      await ctx.reply(
-        [
-          "<b><u>Welcome to [103.5]dawn.&#8203;fm!</u></b>",
-          "<b><i>You’re about to hear The Weeknd like never before.</i></b>\n",
-          "<b>From mixtapes and demos to rare early tracks that built the legend.</b>",
-          "<b>Live sessions, arena anthems and Memento Mori exclusives.</b>",
-          "<b>Hidden cuts, instrumentals, remixes and collabs.</b>\n",
-          "<b>Hit &lt;&lt; /category &gt;&gt; and get started...</b>",
-          "<b>Tune in.</b>\n",
-          "<b><i>“You are now listening to 103.5… DawnFM.”</i></b>",
-        ].join("\n"),
-        { parse_mode: "HTML" }
+      await ctx.replyWithPhoto(
+        "https://raw.githubusercontent.com/akiratakt/theweekndbot/refs/heads/main/covers/default/def.jpeg",
+        {
+          caption: [
+            "<b><u>Welcome to [103.5]dawn.&#8203;fm!</u></b>",
+            "<b><i>You’re about to hear The Weeknd like never before.</i></b>\n",
+            "<b>From mixtapes and demos to rare early tracks that built the legend.</b>",
+            "<b>Live sessions, arena anthems and Memento Mori exclusives.</b>",
+            "<b>Hidden cuts, instrumentals, remixes and collabs.</b>\n",
+            "<b>Hit &lt;&lt; /category &gt;&gt; and get started...</b>",
+            "<b>Tune in.</b>\n",
+            "<b><i>“You are now listening to 103.5… DawnFM.”</i></b>",
+          ].join("\n"),
+          parse_mode: "HTML",
+          disable_web_page_preview: true,
+        }
       );
-
       await ctx.api.deleteMessage(chatId, incomingId).catch(() => {});
     });
 
@@ -257,7 +259,7 @@ export default {
       const botU = bot.botInfo.username;
       let out = "";
       for (const album of Object.keys(byAlb)) {
-        out += `<b>Album:</b> ${album}\n`;
+        out += `<b>Album:</b> <b>[${album}]</b>\n`;
         byAlb[album].forEach((s, i) => {
           const p = `play_${encodeURIComponent(s.id)}`;
           const u = `https://t.me/${botU}?start=${p}`;
@@ -285,7 +287,7 @@ export default {
       if (!query) {
         const lines = Object.entries(albumCodeMap).map(([code, full]) => {
           const u = `https://t.me/${botU}?start=album_${code}`;
-          return `<b>[${code}]</b> <a href="${u}">${full}</a>`;
+          return `<a href="${u}">${full}</a>`;
         });
         return ctx.reply(
           `<b>All albums:</b>\n${lines.join("\n")}`,
@@ -312,7 +314,7 @@ export default {
 
       // **EXACTLY ONE** → show cover + tracks (same as you already have)
       const only = matches[0];
-      const codeOnly = Object.entries(albumCodeMap).find(([c, f]) => f === only)[0];
+      //const codeOnly = Object.entries(albumCodeMap).find(([c, f]) => f === only)[0];
       const tracks = songs.filter(s => s.album === only);
       const list = tracks
         .map((s, i) => {
@@ -325,13 +327,13 @@ export default {
 
       if (coverUrl) {
         return ctx.replyWithPhoto(coverUrl, {
-          caption: `<b>[${codeOnly}] ${only}</b>\n${list}`,
+          caption: `<b>[${only}]</b>\n${list}`,
           parse_mode: "HTML",
           disable_web_page_preview: false,
         });
       } else {
         return ctx.reply(
-          `<b>[${codeOnly}] ${only}</b>\n${list}`,
+          `<b>[${only}]</b>\n${list}`,
           { parse_mode: "HTML", disable_web_page_preview: true }
         );
       }
@@ -366,7 +368,7 @@ export default {
 
       if (!matches.length) {
         return ctx.reply(
-          `<b>No categories matched “${args}”.</b>`,
+          `<b>No categories matched [${args}].</b>`,
           { parse_mode: "HTML" }
         );
       }
@@ -400,12 +402,12 @@ export default {
 
       if (!albums.length) {
         return ctx.reply(
-          `<b>No albums in “${chosenTag}”.</b>`,
+          `<b>No albums in [${chosenTag}].</b>`,
           { parse_mode: "HTML" }
         );
       }
 
-      let out = `<b>Tracks in “${chosenTag}”:</b>\n`;
+      let out = `<b>Tracks in [${chosenTag}]:</b>\n`;
       albums.forEach(albumFull => {
         out += `<b>${albumFull}</b>\n`;
         const tracks = songs.filter(
@@ -435,10 +437,16 @@ export default {
         .toLowerCase()
         .trim();
       if (!raw) {
-        return ctx.reply(
-          "<b>Usage: /play &lt;id or title&gt;</b>",
-          { parse_mode: "HTML" }
-        );
+        // no argument → send a random song
+        const randomSong = songs[Math.floor(Math.random() * songs.length)];
+        return ctx.replyWithAudio(randomSong.file_id, {
+          caption: [
+            `<b>Song:</b> ${randomSong.title}`,
+            `<b>Album:</b> <i>${randomSong.album}</i>`,
+            `<b>Artist:</b> <i>${randomSong.artist}</i>`,
+          ].join("\n"),
+          parse_mode: "HTML",
+        });
       }
       const matches = songs.filter(
         s =>
@@ -475,13 +483,13 @@ export default {
     bot.command("help", ctx => {
       return ctx.reply(
         [
-          "<b>dawn.&#8203;fm [103.5] Commands</b>\n",
-          "<code>/start</code> – launch with optional album_… or category_… deep-link",
-          "<code>/search</code> – fuzzy song search",
-          "<code>/album</code> – list all albums",
-          "<code>/category</code> – list/search deep-linkable categories",
-          "<code>/play</code> – play by ID or fuzzy title",
-          "<code>/help</code> – this help message",
+          "<b>dawn.&#8203;fm [103.5] Commands</b>\n\n" +
+        "<b>/start</b> – start dawn.&#8203;fm [103.5]\n" +
+        "<b>/search</b> – <code>/search</code> song name\n" +
+        "<b>/album</b> – list all the albums\n" +
+        "<b>/category</b> – <code>/category</code> category name\n" +
+        "<b>/play</b> – play a random song\n" +
+        "<b>/help</b> – help for using dawn.&#8203;fm",
         ].join("\n"),
         { parse_mode: "HTML" }
       );

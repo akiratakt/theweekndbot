@@ -1,6 +1,8 @@
 import { Bot } from "grammy";
 import songs from "./songs.json";
 import covers from "./covers.json";
+import categoryMap from "./categoryMap.js";
+
 
 // ——— UTILITY to split a long newline-separated string into sub-messages ———
 function splitByLines(text, maxLen = 4000) {
@@ -27,7 +29,9 @@ function makeAlbumCode(name) {
   const cleaned = name.replace(/[^\w\s\d]/g, " ");
   const parts = cleaned.trim().split(/\s+/);
   return parts
+    .filter(token => token && typeof token === "string")
     .map(token => {
+      if (!token || typeof token !== "string" || !token[0]) return "";
       if (/^[A-Z]{2,}$/.test(token)) return token;
       if (/^\d+$/.test(token)) return token;
       if (token.length > 1 && token.toLowerCase() !== token) return token;
@@ -62,44 +66,61 @@ export default {
       },
     });
 
-    // 1) grab every distinct album name
-    const albumNames = Array.from(new Set(songs.map(s => s.album)));
+// Replace your albumNames and albumCodeMap setup with this:
+ const albumMap = new Set();
+    songs.forEach((song) => {
+      // 1) Split on commas → [ "Live At SoFi Stadium", " Dawn FM" ] etc.
+      song.album
+        .split(",")
+        .map((a) => a.trim())
+        .filter((a) => a.length)
+        .forEach((partitionedAlbumName) => {
+          albumMap.add(partitionedAlbumName);
+        });
+    });
 
-    // 2) build a unique code→albumName map, collision-proofed
-    const albumCodeMap = {};
-    for (const full of albumNames) {
-      const base = makeAlbumCode(full);
+const albumNames = Array.from(albumMap).sort((a, b) =>
+      a.localeCompare(b)
+    );
+
+
+   const albumCodeMap = {};
+    for (const fullAlbumName of albumNames) {
+      const base = makeAlbumCode(fullAlbumName); // e.g. "live-at-sofi-stadium"
       let code = base;
       let i = 1;
       while (albumCodeMap[code]) {
-        code = `${base}${i++}`;
+        code = `${base}${i++}`; // e.g. "live-at-sofi-stadium1", etc.
       }
-      albumCodeMap[code] = full;
+      albumCodeMap[code] = fullAlbumName;
     }
 
     // -- CATEGORY setup --
-    const tagSet = songs.reduce((set, song) => {
+const tagSet = songs.reduce((set, song) => {
       song.category
         .split(",")
-        .map(t => t.trim())
-        .filter(t => t.length)
-        .forEach(t => set.add(t));
+        .map((t) => {
+          const key = t.trim().toLowerCase();
+          return categoryMap[key] || t.trim();
+        })
+        .filter((t) => t.length)
+        .forEach((t) => set.add(t));
       return set;
     }, new Set());
 
-    const categoryNames = Array.from(tagSet);
-
-    // generate a unique code (alphanumeric) for each tag
+    const categoryNames = Array.from(tagSet).sort((a, b) =>
+      a.localeCompare(b)
+    );
     const categoryCodeMap = {};
     for (const full of categoryNames) {
       const base = makeAlbumCode(full);
-      let code = base, i = 1;
+      let code = base,
+        i = 1;
       while (categoryCodeMap[code]) {
         code = `${base}${i++}`;
       }
       categoryCodeMap[code] = full;
     }
-
     // START: handle "/start" + deep-links
     bot.command("start", async ctx => {
       const incomingId = ctx.message?.message_id;
@@ -154,7 +175,7 @@ export default {
 
       // 3) We have at least one track: pull the “real” album name from the first match
       const humanAlbum = tracks[0].album;           // e.g. "After Hours (Deluxe)"
-      const coverUrl = covers[humanAlbum];           // lookup by the real album string
+      const coverUrl = covers[humanAlbum.trim()];           // lookup by the real album string
       const headerText = `<b>[${humanAlbum}]</b>`;
 
       // 4) Send cover + header (if cover exists), else just header
@@ -200,43 +221,50 @@ export default {
           // Optionally handle not found
         }
 
-        const coverUrl = covers[full];
-        const tracks = songs.filter(s => s.album === full);
+        const coverUrl = covers[full.trim()];
+        const tracks = songs.filter((s) =>
+          s.album
+            .split(",")
+            .map((a) => a.trim())
+            .includes(full)
+        );
+        
         const botU = bot.botInfo.username;
 
+const albumHeader = `<b>[${full}]</b>`;
+        if (coverUrl) {
+          await ctx.replyWithPhoto(coverUrl, {
+            caption: albumHeader,
+            parse_mode: "HTML",
+            disable_web_page_preview: false,
+          });
+        } else {
+          await ctx.reply(albumHeader, {
+            parse_mode: "HTML",
+            disable_web_page_preview: true,
+          });
+        }
+
+        // build track‐list lines
         const listLines = tracks.map((s, i) => {
           const p = `play_${encodeURIComponent(s.id)}`;
           const u = `https://t.me/${botU}?start=${p}`;
           return `${i + 1}. <a href="${u}">${s.title} — ${s.artist}</a>`;
         });
-        const albumHeader = `<b>[${full}]</b>`;
-        const albumText = [albumHeader, ...listLines].join("\n");
 
-if (coverUrl) {
-    await ctx.replyWithPhoto(coverUrl, {
-      caption: albumHeader,
-      parse_mode: "HTML",
-      disable_web_page_preview: false,
-    });
-  } else {
-    await ctx.reply(albumHeader, {
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    });
-  }
+        // split into ≤4,000-character chunks
+        const chunks = splitByLines(listLines.join("\n"), 4000);
+        for (const chunk of chunks) {
+          await ctx.reply(chunk, {
+            parse_mode: "HTML",
+            disable_web_page_preview: true,
+          });
+        }
 
-  // 2) Split the full track-list into ≤4,000-char chunks
-  const chunks = splitByLines(listLines.join("\n"), 4000);
-  for (const chunk of chunks) {
-    await ctx.reply(chunk, {
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    });
-  }
-
-  await ctx.api.deleteMessage(chatId, incomingId).catch(() => {});
-  return;
-}
+        await ctx.api.deleteMessage(chatId, incomingId).catch(() => {});
+        return;
+      }
+      
       // CATEGORY deep-link: t.me/…?start=category_CODE
       if (param.startsWith("category_")) {
         const code = param.slice(9);
@@ -253,7 +281,7 @@ if (coverUrl) {
           new Set(
             songs
               .filter(s =>
-                s.category.split(",").map(t => t.trim()).includes(tagName)
+                s.category.split(",").map(t => t.trim()).includes(tagName.trim())
               )
               .map(s => s.album)
           )
@@ -477,7 +505,7 @@ if (matches.length > 1) {
         .map((s, i) => {
           const p = `play_${encodeURIComponent(s.id)}`;
           const u = `https://t.me/${botU}?start=${p}`;
-          return `${i + 1}. <a href="${u}">${s.title} — ${s.artist}</a>`;
+          return `${i + 1}. <a href="${u}">${s.title}</a> — <i>${s.artist}</i>`;
         })
         .join("\n");
       const coverUrl = covers[only];

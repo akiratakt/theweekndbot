@@ -1,7 +1,16 @@
-import { Bot } from "grammy";
+import { Bot, InlineKeyboard } from "grammy";
 import songs from "./songs.json";
 import covers from "./covers.json";
 import categoryMap from "./categoryMap.js";
+import { getLyricsChunks, getAnnotationChunks } from "./lyrics.js";
+
+
+
+
+
+
+// …rest of your bot code…
+
 
 
 // ——— UTILITY to split a long newline-separated string into sub-messages ———
@@ -56,6 +65,7 @@ export default {
 
     const update = await request.json();
 
+    
     // instantiate bot
     const bot = new Bot(env.TELEGRAM_BOT_TOKEN, {
       botInfo: {
@@ -126,29 +136,92 @@ const tagSet = songs.reduce((set, song) => {
       const incomingId = ctx.message?.message_id;
       const chatId = ctx.chat.id;
       const payload = ctx.startPayload || "";
-      const param =
-        payload.startsWith("play_") ||
-        payload.startsWith("album_") ||
-        payload.startsWith("category_")
-          ? payload
-          : (ctx.message?.text || "").split(" ").slice(1)[0] || "";
+const param =
+  payload.startsWith("play_") ||
+  payload.startsWith("album_") ||
+  payload.startsWith("category_") ||
+  payload.startsWith("lyrics_")
+    ? payload
+    : (ctx.message?.text || "").split(" ").slice(1)[0] || "";
 
       // PLAY deep-link:  t.me/…?start=play_TRACKID
-      if (param.startsWith("play_")) {
+// ── PLAY deep-link: t.me/…?start=play_TRACKID ──
+if (param.startsWith("play_")) {
         const trackId = param.slice(5);
-        const track = songs.find(s => s.id === trackId);
+        const track   = songs.find((s) => s.id === trackId);
         if (!track) {
           await ctx.reply("<b>Track not found!</b>", { parse_mode: "HTML" });
-        } else {
-          await ctx.replyWithAudio(track.file_id, {
-            caption: [
-              `<b>Song:</b> ${track.title}`,
-              `<b>Album:</b> <i>${track.album}</i>`,
-              `<b>Artist:</b> <i>${track.artist}</i>`,
-            ].join("\n"),
-            parse_mode: "HTML",
-          });
+          await ctx.api.deleteMessage(chatId, incomingId).catch(() => {});
+          return;
         }
+
+        // 1) Send the audio file
+        await ctx.replyWithAudio(track.file_id, {
+          caption: [
+            `<b>Song:</b> ${track.title}`,
+            `<b>Album:</b> <i>${track.album}</i>`,
+            `<b>Artist:</b> <i>${track.artist}</i>`,
+          ].join("\n"),
+          parse_mode: "HTML",
+        });
+
+        // 3) Send “.” button
+        const botU     = bot.botInfo.username;
+        const deepLink = `https://t.me/${botU}?start=lyrics_${track.id}`;
+        const keyboard = new InlineKeyboard().url("Lyrics?", deepLink);
+        await ctx.reply("...", {
+          reply_markup: keyboard,
+          parse_mode: "HTML",
+        });
+
+        await ctx.api.deleteMessage(chatId, incomingId).catch(() => {});
+        return;
+      }
+      
+      // ── LYRICS deep‐link (lyrics_TRACKID) ──
+      if (param.startsWith("lyrics_")) {
+        const trackId = param.slice(7);
+        const track   = songs.find((s) => s.id === trackId);
+        if (!track) {
+          await ctx.reply("<b>Track not found!</b>", { parse_mode: "HTML" });
+          await ctx.api.deleteMessage(chatId, incomingId).catch(() => {});
+          return;
+        }
+
+  const lyricsChunks = await getLyricsChunks(
+    track.artist,
+    track.title,
+    env.GENIUS_API_TOKEN
+  );
+
+
+  if (!lyricsChunks) {
+          await ctx.reply(
+            `<b>No lyrics found for [${track.title}] by ${track.artist}</b>`,
+            { parse_mode: "HTML" }
+          );
+          await ctx.api.deleteMessage(chatId, incomingId).catch(() => {});
+          return;
+        }
+
+        // Send header + each chunk
+await ctx.reply(
+  `<b>Lyrics for [${track.title}]</b>`,
+  {
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  }
+);
+for (const chunk of lyricsChunks) {
+  await ctx.reply(
+    chunk,
+    {
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    }
+  );
+}
+
         await ctx.api.deleteMessage(chatId, incomingId).catch(() => {});
         return;
       }
@@ -277,15 +350,23 @@ const albumHeader = `<b>[${full}]</b>`;
         }
 
         // 1) collect unique album names carrying this tag
-        const albums = Array.from(
-          new Set(
-            songs
-              .filter(s =>
-                s.category.split(",").map(t => t.trim()).includes(tagName.trim())
-              )
-              .map(s => s.album)
-          )
-        );
+// ─── STEP 1: collect individual album names carrying this tag ───
+const albumSetCat = new Set();
+songs
+  .filter(s =>
+    s.category
+      .split(",")
+      .map(t => t.trim())
+      .includes(tagName.trim())
+  )
+  .forEach(s => {
+    s.album
+      .split(",")
+      .map(a => a.trim())
+      .filter(a => a.length)
+      .forEach(a => albumSetCat.add(a));
+  });
+const albums = Array.from(albumSetCat);
 
         // 2) if only one album, immediately show its cover & tracklist
 // 2) if only one album, immediately show its cover & tracklist
@@ -332,6 +413,9 @@ if (albums.length === 1) {
   await ctx.api.deleteMessage(chatId, incomingId).catch(() => {});
   return;
 }
+
+
+      // ── LYRICS deep-link: t.me/…?start=lyrics_TRACKID ──
 
         // 3) otherwise, show a list of albums as deep-links for this category
 // 3) otherwise, show a (possibly large) list of albums as deep-links for this category
@@ -657,58 +741,104 @@ for (const chunk of chunks) {
 return;
     });
 
-    // PLAY: fuzzy play by id/title
-    bot.command("play", async ctx => {
-      const raw = (ctx.message?.text || "")
-        .split(" ")
-        .slice(1)
-        .join(" ")
-        .toLowerCase()
-        .trim();
-      if (!raw) {
-        // no argument → send a random song
-        const randomSong = songs[Math.floor(Math.random() * songs.length)];
-        return ctx.replyWithAudio(randomSong.file_id, {
-          caption: [
-            `<b>Song:</b> ${randomSong.title}`,
-            `<b>Album:</b> <i>${randomSong.album}</i>`,
-            `<b>Artist:</b> <i>${randomSong.artist}</i>`,
-          ].join("\n"),
-          parse_mode: "HTML",
-        });
-      }
-      const matches = songs.filter(
-        s =>
-          s.id.toLowerCase().includes(raw) ||
-          s.title.toLowerCase().includes(raw)
-      );
-      if (!matches.length) {
-        return ctx.reply("<b>No songs found.</b>", { parse_mode: "HTML" });
-      }
-if (matches.length > 1) {
-  const botU = bot.botInfo.username;
-  const lines = matches.map((s, i) => {
-    // build the deep‐link exactly as before:
-    const p = `play_${encodeURIComponent(s.id)}`;
-    const u = `https://t.me/${botU}?start=${p}`;
+// PLAY: fuzzy play by id/title
+// PLAY: fuzzy play by id/title
+bot.command("play", async (ctx) => {
+  const raw = (ctx.message?.text || "")
+    .split(" ")
+    .slice(1)
+    .join(" ")
+    .toLowerCase()
+    .trim();
 
-    // wrap the *song title* in an <a>…</a> tag
-    // so that Telegram draws it as a clickable link:
-    return `${i + 1}. <a href="${u}">${s.title}</a> — ${s.album}`;
+  // 1) No argument → pick & send a random song + annotation + “Need Lyrics?”
+  if (!raw) {
+    const randomSong = songs[Math.floor(Math.random() * songs.length)];
+
+    // 1a) Send audio
+    await ctx.replyWithAudio(randomSong.file_id, {
+      caption: [
+        `<b>Song:</b> ${randomSong.title}`,
+        `<b>Album:</b> <i>${randomSong.album}</i>`,
+        `<b>Artist:</b> <i>${randomSong.artist}</i>`,
+      ].join("\n"),
+      parse_mode: "HTML",
+    });
+
+
+    // 1c) Send “Need Lyrics?” button
+    const botU = bot.botInfo.username;
+    const deepLink = `https://t.me/${botU}?start=lyrics_${randomSong.id}`;
+    const keyboard = new InlineKeyboard().url("Lyrics?", deepLink);
+    await ctx.reply("...",{
+      reply_markup: keyboard,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    });
+
+    return;
+  }
+
+  // 2) Query present → do fuzzy matching in songs.json
+  const matches = songs.filter(
+    (s) =>
+      s.id.toLowerCase().includes(raw) ||
+      s.title.toLowerCase().includes(raw)
+  );
+
+  // 2a) No songs matched → inform user
+  if (!matches.length) {
+    return ctx.reply("<b>No songs found.</b>", { parse_mode: "HTML" });
+  }
+
+  // 2b) More than one match → list them as playable deep‐links, then return
+  if (matches.length > 1) {
+    const botU = bot.botInfo.username;
+    const header = "<b>Multiple songs found:</b>\n";
+    const lines = matches.map((s, i) => {
+      const payload = `play_${encodeURIComponent(s.id)}`;
+      const u = `https://t.me/${botU}?start=${payload}`;
+      return `${i + 1}. <a href="${u}">${s.title}</a> — <i>${s.artist}</i>`;
+    });
+
+    // Join & chunk if necessary
+    const fullText = header + lines.join("\n");
+    const chunks = splitByLines(fullText, 4000);
+    for (const chunk of chunks) {
+      await ctx.reply(chunk, {
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      });
+    }
+    return;
+  }
+
+  // 2c) Exactly one match → send that track + annotation + “Need Lyrics?”
+  const selected = matches[0];
+
+  // 3a) Send audio
+  await ctx.replyWithAudio(selected.file_id, {
+    caption: [
+      `<b>Song:</b> ${selected.title}`,
+      `<b>Album:</b> <i>${selected.album}</i>`,
+      `<b>Artist:</b> <i>${selected.artist}</i>`,
+    ].join("\n"),
+    parse_mode: "HTML",
   });
 
-  // now send everything with parse_mode: "HTML"
-  const fullText = "<b>Multiple songs found:</b>\n" + lines.join("\n");
-  const chunks = splitByLines(fullText, 4000);
-  for (const chunk of chunks) {
-    await ctx.reply(chunk, {
-      parse_mode: "HTML",
-      disable_web_page_preview: true, // it’s safe to keep this on
-    });
-  }
-  return;
-}
-    });
+  // 3b) Fetch & send annotations (or “Could not find any info…”)
+
+  // 3c) Send “Need Lyrics?” button
+  const botU2 = bot.botInfo.username;
+  const deepLink2 = `https://t.me/${botU2}?start=lyrics_${selected.id}`;
+  const keyboard2 = new InlineKeyboard().url("Lyrics?", deepLink2);
+  await ctx.reply("...",{
+    reply_markup: keyboard2,
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  });
+});
+
 
     // HELP
     bot.command("help", ctx => {

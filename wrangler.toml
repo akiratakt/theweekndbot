@@ -1,6 +1,7 @@
 name = "theweekndbot"
 main = "src/index.js"
 compatibility_date = "2025-05-24"
+type = "modules" 
 
 # Your Cloudflare account ID is required here (find it in your dashboard)
 account_id = "d86a78b8d5fd8d26d8b6aebd6024bfc8"
@@ -14,3 +15,4 @@ workers_dev = true
 
 [vars]
 TELEGRAM_BOT_TOKEN = "7537190571:AAGGikNChQnzBvBUwxYH6HqTCBz7Ps2Ar3o"
+env.GENIUS_API_TOKEN = "egrMu0DFWo95w6nOP1F6ArVtiAssIVZovbPXAeYK6AkLZDXrPbpoMYx8LyIQYOVy"

@@ -1,0 +1,30 @@
+{
+  "5759927190": {
+    "first_name": "Tákt",
+    "last_name": "Akira",
+    "username": "takt_akira",
+    "started_at": "1749094303"
+  },
+  "7620017401": {
+    "id": 7620017401,
+    "is_bot": false,
+    "first_name": "Mastaan",
+    "last_name": "Ali",
+    "username": "mastaanali",
+    "language_code": "en",
+    "is_premium": false,
+    "added_to_attachment_menu": false,
+    "supports_inline_queries": false,
+    "can_join_groups": false,
+    "can_read_all_group_messages": false,
+    "can_connect_to_business": false,
+    "has_main_web_app": false,
+    "started_at": "2025-06-05T04:16:21.000Z"
+  },
+  "7829671496": {
+    "first_name": "Seven",
+    "last_name": "",
+    "username": "sci_seven",
+    "started_at": "1749094323"
+  }
+}

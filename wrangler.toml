@@ -16,3 +16,8 @@ workers_dev = true
 [vars]
 TELEGRAM_BOT_TOKEN = "7537190571:AAGGikNChQnzBvBUwxYH6HqTCBz7Ps2Ar3o"
 env.GENIUS_API_TOKEN = "egrMu0DFWo95w6nOP1F6ArVtiAssIVZovbPXAeYK6AkLZDXrPbpoMYx8LyIQYOVy"
+EXPORT_SECRET = "log1035"
+
+[[kv_namespaces]]
+binding = "DAWN_LOG"
+id = "f8c8fdf17488468c85815394af14f4fd"

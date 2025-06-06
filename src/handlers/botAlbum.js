@@ -89,20 +89,30 @@ export async function handleSingleAlbum(ctx, bot, albumName, songs, covers) {
   const botU = bot.botInfo.username;
   
   // Send album header with cover if available
-  const coverUrl = covers[albumName.trim()];
-  const headerText = `<b>[${albumName}]</b>`;
+// Send album header with cover if available
+const coverUrl = covers[albumName.trim()];
+const headerText = `<b>[${albumName}]</b>`;
 
-  if (coverUrl) {
-    await ctx.replyWithPhoto(coverUrl, {
+if (coverUrl) {
+  if (coverUrl.toLowerCase().endsWith(".gif")) {
+    // Send as animation so Telegram will actually loop it
+    await ctx.replyWithAnimation(coverUrl, {
       caption: headerText,
       parse_mode: "HTML",
     });
   } else {
-    await ctx.reply(headerText, {
+    // Non‐GIF covers stay as static photos
+    await ctx.replyWithPhoto(coverUrl, {
+      caption: headerText,
       parse_mode: "HTML",
-      disable_web_page_preview: true,
     });
   }
+} else {
+  await ctx.reply(headerText, {
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  });
+}
 
   // Build track list
   const lines = tracks.map((s, idx) => {

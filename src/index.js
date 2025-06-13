@@ -31,7 +31,15 @@ export default {
       },
     });
 
-    // Setup album and category maps
+        bot.use(async (ctx, next) => {
+  if (ctx.chat?.type === "channel") {
+    await ctx.reply("DawnFM currently doesn't support channels.");
+    return;   // stop here in channels
+  }
+  await next();  // non‑channels continue normally
+});
+
+
     const { albumMap, albumNames, albumCodeMap } = setupAlbums(songs);
     const { tagSet, categoryNames, categoryCodeMap } = setupCategories(songs, categoryMap);
 

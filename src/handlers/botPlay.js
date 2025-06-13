@@ -48,33 +48,38 @@ export async function handleRandomPlay(ctx, bot, songs) {
     parse_mode: "HTML",
   });
 
-  const botU = bot.botInfo.username;
-  const deepLink = `https://t.me/${botU}?start=lyrics_${randomSong.id}`;
-  const keyboard = new InlineKeyboard().url("Lyrics?", deepLink);
+  // Only show Lyrics button in private chat
+  if (ctx.chat.type === "private") {
+    const botU = bot.botInfo.username;
+    const deepLink = `https://t.me/${botU}?start=lyrics_${randomSong.id}`;
+    const keyboard = new InlineKeyboard().url("Lyrics?", deepLink);
 
-  // Send the "..." message and capture the sent message object
-  const sent = await ctx.reply("...", {
-    reply_markup: keyboard,
-    parse_mode: "HTML",
-    disable_web_page_preview: true,
-  });
+    const sent = await ctx.reply("...", {
+      reply_markup: keyboard,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    });
 
-  // Auto-delete the "..." message after 2 seconds (2000 ms)
-  setTimeout(() => {
-    ctx.api.deleteMessage(ctx.chat.id, sent.message_id).catch(console.error);
-  }, 2000);
+    setTimeout(() => {
+      ctx.api.deleteMessage(ctx.chat.id, sent.message_id).catch(console.error);
+    }, 2000);
+  }
 }
 
 async function handleMultipleMatches(ctx, bot, matches) {
   const botU = bot.botInfo.username;
   const header = "<b>Multiple songs found:</b>\n";
-  const lines = matches.map((s, i) => {
-    const payload = `play_${encodeURIComponent(s.id)}`;
-    const u = `https://t.me/${botU}?start=${payload}`;
-    return `${i + 1}. <a href="${u}">${s.title}</a> — <i>${s.artist}</i>`;
+  const lines = matches.map((s) => {
+    if (ctx.chat.type === "private") {
+      const payload = `play_${encodeURIComponent(s.id)}`;
+      const u = `https://t.me/${botU}?start=${payload}`;
+      return `<a href="${u}">•${s.title}</a> — <i>${s.artist}</i>`;
+    } else {
+      return `<b>•${s.title} — ${s.artist}</b>\n<code>/play@${botU} ${s.id}</code>`;
+    }
   });
 
-  const fullText = header + lines.join("\n");
+  const fullText = header + lines.join("\n\n");
   const chunks = splitByLines(fullText, 4000);
   for (const chunk of chunks) {
     await ctx.reply(chunk, {
@@ -94,19 +99,20 @@ async function handleSingleMatch(ctx, bot, selected) {
     parse_mode: "HTML",
   });
 
-  const botU = bot.botInfo.username;
-  const deepLink = `https://t.me/${botU}?start=lyrics_${selected.id}`;
-  const keyboard = new InlineKeyboard().url("Lyrics?", deepLink);
+  // Only show Lyrics button in private chat
+  if (ctx.chat.type === "private") {
+    const botU = bot.botInfo.username;
+    const deepLink = `https://t.me/${botU}?start=lyrics_${selected.id}`;
+    const keyboard = new InlineKeyboard().url("Lyrics?", deepLink);
 
-  // Send the "..." message and capture the sent message object
-  const sent = await ctx.reply("...", {
-    reply_markup: keyboard,
-    parse_mode: "HTML",
-    disable_web_page_preview: true,
-  });
+    const sent = await ctx.reply("...", {
+      reply_markup: keyboard,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    });
 
-  // Auto-delete the "..." message after 2 seconds (2000 ms)
-  setTimeout(() => {
-    ctx.api.deleteMessage(ctx.chat.id, sent.message_id).catch(console.error);
-  }, 2000);
+    setTimeout(() => {
+      ctx.api.deleteMessage(ctx.chat.id, sent.message_id).catch(console.error);
+    }, 2000);
+  }
 }

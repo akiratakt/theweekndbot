@@ -33,9 +33,13 @@ export async function handleSearch(ctx, bot, songs) {
     for (const album of Object.keys(byAlb)) {
       out += `<b>Album:</b> <b>[${album}]</b>\n`;
       byAlb[album].forEach((s, i) => {
-        const p = `play_${encodeURIComponent(s.id)}`;
-        const u = `https://t.me/${botU}?start=${p}`;
-        out += `${i + 1}. <a href="${u}">${s.title}</a>\n`;
+        if (ctx.chat.type === "private") {
+          const p = `play_${encodeURIComponent(s.id)}`;
+          const u = `https://t.me/${botU}?start=${p}`;
+          out += `${i + 1}. <a href="${u}">•${s.title}</a>\n`;
+        } else {
+          out += `<b>•${s.title} — ${s.artist}</b>\n<code>/play@${botU} ${s.id}</code>\n\n`;
+        }
       });
       out += "\n";
     }

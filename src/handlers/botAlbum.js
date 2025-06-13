@@ -34,13 +34,24 @@ export async function handleAlbum(ctx, bot, songs, covers, albumNames, albumCode
 
 export async function handleAllAlbums(ctx, bot, albumCodeMap) {
   const botU = bot.botInfo.username;
-  const lines = Object.entries(albumCodeMap).map(([code, full]) => {
-    const u = `https://t.me/${botU}?start=album_${code}`;
-    return `<a href="${u}">${full}</a>`;
-  });
+  const isPrivate = ctx.chat.type === "private";
+
+  let lines;
+  if (isPrivate) {
+    // Private: deep links
+    lines = Object.entries(albumCodeMap).map(([code, full]) => {
+      const u = `https://t.me/${botU}?start=album_${code}`;
+      return `<a href="${u}">${full}</a>`;
+    });
+  } else {
+    // Group: show as "Album Name\n<code>/album@BotUsername Album Name</code>"
+    lines = Object.values(albumCodeMap).map(full => {
+      return `${full}\n<code>/album@${botU} ${full}</code>`;
+    });
+  }
 
   const header = "<b>All albums:</b>";
-  const fullText = header + "\n" + lines.join("\n");
+  const fullText = header + "\n" + lines.join("\n\n");
 
   const chunks = splitByLines(fullText, 4000);
   for (const chunk of chunks) {
@@ -53,27 +64,23 @@ export async function handleAllAlbums(ctx, bot, albumCodeMap) {
 
 export async function handleMultipleAlbums(ctx, bot, matches) {
   const botU = bot.botInfo.username;
-  const pieceSet = new Set();
+  const isPrivate = ctx.chat.type === "private";
 
-  // Build unique pieces set
-  for (const full of matches) {
-    full
-      .split(",")
-      .map(piece => piece.trim())
-      .filter(piece => piece.length)
-      .forEach(piece => pieceSet.add(piece));
-  }
-
-  // Create links for each piece
-  const lines = [];
-  for (const piece of pieceSet) {
-    const payload = slugify(piece);
-    const u = `https://t.me/${botU}?start=piece_${payload}`;
-    lines.push(`<a href="${u}">${piece}</a>`);
+  let lines;
+  if (isPrivate) {
+    lines = matches.map(full => {
+      const payload = slugify(full);
+      const u = `https://t.me/${botU}?start=album_${payload}`;
+      return `<a href="${u}">${full}</a>`;
+    });
+  } else {
+    lines = matches.map(full => {
+      return `<b>${full}</b>\n<code>/album@${botU} ${full}</code>`;
+    });
   }
 
   const header = "<b>Multiple albums found:</b>";
-  const fullText = header + "\n" + lines.join("\n");
+  const fullText = header + "\n" + lines.join("\n\n");
 
   const chunks = splitByLines(fullText, 4000);
   for (const chunk of chunks) {
@@ -89,36 +96,39 @@ export async function handleSingleAlbum(ctx, bot, albumName, songs, covers) {
   const botU = bot.botInfo.username;
   
   // Send album header with cover if available
-// Send album header with cover if available
-const coverUrl = covers[albumName.trim()];
-const headerText = `<b>[${albumName}]</b>`;
+  const coverUrl = covers[albumName.trim()];
+  const headerText = `<b>[${albumName}]</b>`;
 
-if (coverUrl) {
-  if (coverUrl.toLowerCase().endsWith(".gif")) {
-    // Send as animation so Telegram will actually loop it
-    await ctx.replyWithAnimation(coverUrl, {
-      caption: headerText,
-      parse_mode: "HTML",
-    });
+  if (coverUrl) {
+    if (coverUrl.toLowerCase().endsWith(".gif")) {
+      // Send as animation so Telegram will actually loop it
+      await ctx.replyWithAnimation(coverUrl, {
+        caption: headerText,
+        parse_mode: "HTML",
+      });
+    } else {
+      // Non‐GIF covers stay as static photos
+      await ctx.replyWithPhoto(coverUrl, {
+        caption: headerText,
+        parse_mode: "HTML",
+      });
+    }
   } else {
-    // Non‐GIF covers stay as static photos
-    await ctx.replyWithPhoto(coverUrl, {
-      caption: headerText,
+    await ctx.reply(headerText, {
       parse_mode: "HTML",
+      disable_web_page_preview: true,
     });
   }
-} else {
-  await ctx.reply(headerText, {
-    parse_mode: "HTML",
-    disable_web_page_preview: true,
-  });
-}
 
   // Build track list
   const lines = tracks.map((s, idx) => {
-    const p = `play_${encodeURIComponent(s.id)}`;
-    const u = `https://t.me/${botU}?start=${p}`;
-    return `${idx + 1}. <a href="${u}">${s.title}</a> — <i>${s.artist}</i>`;
+    if (ctx.chat.type === "private") {
+      const p = `play_${encodeURIComponent(s.id)}`;
+      const u = `https://t.me/${botU}?start=${p}`;
+      return `${idx + 1}. <a href="${u}">•${s.title}</a> — <i>${s.artist}</i>`;
+    } else {
+      return `<b>•${s.title} — ${s.artist}</b>\n<code>/play@${botU} ${s.id}</code>`;
+    }
   });
 
   const fullText = lines.join("\n");

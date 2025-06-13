@@ -106,9 +106,13 @@ export async function handleSingleCategory(ctx, bot, [catCode, chosenTag], songs
     );
     
     tracks.forEach((t, idx) => {
-      const p = `play_${encodeURIComponent(t.id)}`;
-      const u = `https://t.me/${botU}?start=${p}`;
-      linesArray.push(`${idx + 1}. <a href="${u}">${t.title} — ${t.artist}</a>`);
+      if (ctx.chat.type === "private") {
+        const p = `play_${encodeURIComponent(t.id)}`;
+        const u = `https://t.me/${botU}?start=${p}`;
+        linesArray.push(`${idx + 1}. <a href="${u}">•${t.title} — ${t.artist}</a>`);
+      } else {
+        linesArray.push(`<b>•${t.title} — ${t.artist}</b>\n<code>/play@${botU} ${t.id}</code>`);
+      }
     });
     linesArray.push(""); // blank line between albums
   });
